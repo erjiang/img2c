@@ -42,6 +42,7 @@ import Image # Use PIL
 import sys
 import os
 import string
+import math
 
 helpmessage = """Usage: image2code.py input-image [output-file]"""
 
@@ -69,6 +70,8 @@ def number2ascii(n):
         return "\\\\"
     if(n == 34): # double quote
         return "\\\""
+    if(n >= 48 and n <= 57): # make sure numbers don't get mucked onto the previous escape sequence
+        return "\"\"%s" % chr(n)
     else:
         return chr(n)
 
@@ -77,13 +80,13 @@ def bpp(img):
     if(f == '1'):
         return 1
     elif(f == 'L'):
-        return 1
+        return 8
     elif(f == 'RGB'):
-        return 3
+        return 24
     elif(f == 'RGBA'):
-        return 4
+        return 36
     elif(f == 'CMYK'):
-        return 4
+        return 36
     else:
         raise Exception("Unknown image mode: %s" % f)
 
@@ -99,24 +102,49 @@ def bpp(img):
 om.write("""static const struct {
     unsigned int   width;
     unsigned int   height;
-    unsigned int   bytes_per_pixel;
-    unsigned char  pixel_data[%d * %d * %d + 1];
+    unsigned int   bits_per_pixel;
+    unsigned char  pixel_data[%d]
 } %s = {
     %d, %d, %d,
-""" % (im.size[0], im.size[1], bpp(im),
+""" % (math.ceil(im.size[0] * im.size[1] * bpp(im)/8)+1,
     string.upper(os.path.splitext(os.path.basename(infile))[0]),
     im.size[0], im.size[1], bpp(im)))
 
 imdata = im.getdata()
 c = 0
-for p in imdata:
-    if(c == 0):
-        om.write("  \"")
-    t = number2ascii(p)
-    c = c + len(t)
-    om.write(t)
-    if(c > 72):
-        om.write("\"\n")
-        c = 0
+
+if(bpp(im) > 1):
+    for p in imdata:
+        if(c == 0):
+            om.write("  \"")
+        t = number2ascii(p)
+        c = c + len(t)
+        om.write(t)
+        if(c > 72):
+            om.write("\"\n")
+            c = 0
+else:
+    w = im.size[0]
+    curr = 0
+    bits = 0
+    for i, p in enumerate(imdata):
+        bits = bits + 1
+        print("i = %d" % i)
+        if(p == 0):
+            curr = curr << 1
+        else:
+            curr = (curr << 1) + 1
+        if(bits == 8 or i % w == w - 1):
+            print "write"
+            if(c == 0):
+                om.write("  \"")
+            t = number2ascii(curr)
+            c = c + len(t)
+            om.write(t)
+            if(c > 72):
+                om.write("\"\n")
+                c = 0
+            curr = 0
+            bits = 0
 
 om.write("\"};")
